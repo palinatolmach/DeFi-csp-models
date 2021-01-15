@@ -1,0 +1,139 @@
+﻿//@@Curve Compound Pool Deposit@@
+// Pool tokens: USDC, DAI; cCrv, cUSDC, cDAI 
+// Key protocols: Curve, Compound; Maker
+
+#include "C:\Users\User\Desktop\Compound.csp";
+#include "C:\Users\User\Desktop\Model.csp";
+#include "C:\Users\User\Desktop\Tokens.csp";
+#import "PAT.Math";
+#import "PAT.Lib.Curve";
+
+// Variables
+#define N_COINS 2;
+#define Curve_A 450;
+#define Curve_fee 4;
+#define Curve_adminFee 50;
+#define Curve_feeDenominator 100;
+
+#define add_liquidity 0;
+#define remove_liquidity 1;
+#define exchange 2;
+#define cCrv_approveF 9;
+#define cCrv_transferF 10;
+
+var USE_LENDING = [true,true];
+
+var _fee;
+var zeros[N_COINS];
+var amounts[N_COINS];
+			
+//var cCrv_balances[10]:{0..} = [0(6),141104,0(3)];
+//var cCrv_allowed[10][10]:{0..};
+
+var cCrv_balances[10]:{0..} = [0(6),14110457,0(3)];
+var cCrv_allowed[10][10]:{0..};
+var cCrv_totalSupply = 14110457;
+var cCrv_sum = call(sum,cCrv_balances);
+var pre_cCrv_balances[10]:{0..};
+var pre_cCrv_allowed[10]:{0..};
+var pre_cCrv_totalSupply;
+
+var swapBalances[N_COINS]:{0..} = [300000000,300000000];
+var pre_swapBalances[N_COINS];
+var dy;
+var cCrv_mintAmount;
+var exchangeRates[N_COINS];
+var pre_exchangeRates[N_COINS];
+//var fees[N_COINS];
+var withdrawValue[N_COINS];
+var uamounts[N_COINS];
+var balanceCUSDC;
+var balanceCDAI;
+var res[3] = [0,0,0];
+var new_res[3] = [0,0,0];
+
+var token_amount_after;
+var diff;
+var token_amount_before;
+var token_amount;
+
+// Fee calculation
+var idealBalance;
+var difference;
+
+// Loss and profit calculation
+var loss;
+var profit;
+
+Curve_addLiquidity(_uamounts, min_mint_amount, sender) = atomic{[_uamounts > 0]USDC_transferFrom(user, curveDeposit, _uamounts, curveDeposit);
+											   USDC_approve(compCUSDC,_uamounts,curveDeposit);
+											   // [amounts[DAI] > 0]performDAITransfers(_uamounts[DAI]);
+											   cUSDC_mint(_uamounts,curveDeposit); // also, cAmounts should be set equal to zeros
+											   tau{cAmounts[USDC] = cUSDC_accountTokens[curveDeposit]} -> // cAmounts should be zero before the txn
+											   cUSDC_approve(curveSwap,cUSDC_accountTokens[curveDeposit],curveDeposit);
+											   Curve_swap_addLiquidity(cAmounts,min_mint_amount,sender);
+											   cCrv_transfer(user,cCrv_mintAmount,curveDeposit)};
+
+Curve_swap_addLiquidity(_amounts,min_mint_amount,sender) = atomic{Curve_current_rates();
+								tau{res = call(curveMintAmount,swapBalances,_amounts[0],exchangeRates,cCrv_totalSupply);
+									cCrv_mintAmount = res[0]; swapBalances[0] = res[1]; swapBalances[1] = res[2]; } ->
+								(if (cCrv_mintAmount < min_mint_amount) {Reverting()}
+								 else {cUSDC_transferFrom(curveDeposit,curveSwap,_amounts[0],curveSwap);
+									   cCrv_mint(curveDeposit,cCrv_mintAmount); AddLiquidity ->
+									   addLiquidity.sender._amounts -> Skip}
+								 )};											   
+											   
+Curve_sendAll(_addr, min_uamounts,one) = atomic {getWrappedBalances{balanceCUSDC = cUSDC_accountTokens[curveDeposit];} -> // balanceCDAI = cDAI_balances[_addr];} ->
+										 cUSDC_redeem(balanceCUSDC,curveDeposit); // then, cDAI_redeem();
+										 tau{uamounts[0] = USDC_balances[curveDeposit]} ->
+										 (if (uamounts[0] < min_uamounts[0]) {REVERT -> Reverting()}
+										  else {USDC_transfer(user, uamounts[0], curveDeposit);
+										 		tau{loss = suppliedTokens - uamounts[0]} ->
+										 		liquidityRemoved -> Skip}
+										 		// (if (loss < 0) {tau{profit = call(Abs,loss);} -> liquidityRemoved -> Skip} else {Skip})}
+										  )}; //cDAI_transfer(); Add DAI support here;
+
+Curve_remove_liquidity_one_coin(_token_amount,min_uamount,sender) =
+								atomic{Curve_current_rates();
+								Curve_calc_withdraw_one_coin(_token_amount);
+							    (if (dy < min_uamount) {REVERT -> Reverting()});
+								cCrv_transferFrom(sender,curveDeposit,_token_amount,curveDeposit);
+								tau{amounts[0] = 0; amounts[1] = 0; amounts[0] = call(calcRemoveAmount,dy,exchangeRates); 
+								token_amount_before = cCrv_balances[curveDeposit];} ->
+								Curve_swap_remove_liquidity_imbalance(amounts, _token_amount, curveDeposit);
+								Curve_sendAll(sender,zeros,0)};
+
+Curve_swap_remove_liquidity_imbalance(_amounts, max_burn_amount,sender) = atomic{
+								tau{res = call(removeLiquidityImbalance,swapBalances,_amounts[0],exchangeRates,cCrv_totalSupply);
+									token_amount = res[0]; swapBalances[0] = res[1]; swapBalances[1] = res[2]; } ->
+								(if ((token_amount <= 0) || (token_amount > max_burn_amount)) {REVERT -> Reverting()}
+								 else {cUSDC_transfer(sender,_amounts[0],curveSwap);
+									   cCrv_burnFrom(sender,token_amount);
+									   removeLiquidityImbalance.sender._amounts[0] -> Skip}
+								)};
+								
+Curve_calc_withdraw_one_coin(_token_amount) = atomic{tau{dy=call(calcWithdrawOneCoin,USDC,_token_amount,cCrv_totalSupply,swapBalances,exchangeRates);} -> Skip};
+
+Curve_swap_exchange(i,j,dx,min_dy,sender) = atomic {Curve_current_rates();
+								tau{new_res = call(_exchange,i,j,dx,swapBalances,exchangeRates);
+									dy = new_res[0]; swapBalances[0] = new_res[1]; swapBalances[1] = new_res[2];} ->
+								(if (dy < min_dy) {REVERT -> Reverting()}
+								 else {(if (i == USDC) {cUSDC_transferFrom(sender,curveSwap,dx,curveSwap); cDAI_transfer(sender,dy,curveSwap)}
+								else {cDAI_transferFrom(sender,curveSwap,dx,curveSwap); cUSDC_transfer(sender,dy,curveSwap)});
+								tokenExchange.sender.dy ->
+								tokenExchange -> Skip})};
+
+Curve_removeLiquidity(_amount, min_uamounts,sender) = atomic {cCrv_transfer(user,curveDeposit,_amount);
+											   Curve_swap_removeLiquidity(_amount, zeros);
+											   Curve_sendAll(curveDeposit, min_uamounts, -1)};
+	   
+Curve_swap_removeLiquidity(_amount, min_amounts) = atomic {withdrawWrapped{var i = 0; while (i < 2) {
+														withdrawValue[i] = swapBalances[i] * _amount / cCrv_totalSupply;
+														swapBalances[i] = swapBalances[i] - withdrawValue[0];
+														i = i + 1;}}
+														-> cUSDC_transferFrom(curveSwap,curveDeposit,withdrawValue[USDC],curveSwap);
+														// cDAI_transferFrom(curveSwap,curveDeposit,withdrawValue[1]);
+														cCrv_burnFrom(curveDeposit,_amount)};
+
+
+Curve_current_rates() = cUSDC_exchangeRateCurrent();

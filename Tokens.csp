@@ -1,0 +1,68 @@
+﻿//@@Token Contracts@@
+// ER20 Tokens Considered: USDC, DAI; Also, cCrv, cUSDC, cDAI
+
+#include "C:\Users\User\Desktop\Compound.csp";
+#include "C:\Users\User\Desktop\Curve_cPool.csp";
+#include "C:\Users\User\Desktop\Model.csp";
+#import "PAT.Math";
+#import "PAT.Lib.Curve";
+
+var USDC_balances[10]:{0..} = [200000,0,834474,200,500000,200,10000,200(3)];
+var USDC_allowed[10][10]:{0..};
+var USDC_totalSupply = 1545474;
+var DAI_totalSupply = 360196;
+var pre_USDC_balances[10];
+var pre_USDC_allowed[10];
+var USDC_sum = call(sum, USDC_balances);
+
+var DAI_balances[10]:{0..} = [20,0,360036,20(7)];
+var DAI_allowed[10][10]:{0..};
+var pre_DAI_balances[10];
+var pre_DAI_allowed[10];
+var DAI_sum = call(sum, DAI_balances);
+
+#define USDC_approveF 7;
+#define USDC_transferF 8;
+
+performDAITransfers(_amounts,sender) = atomic{DAI_transferFrom(0,1,_amounts[1],sender);
+ cDAI_mint(_amounts[1],curveDeposit); tau{cAmounts[1] = mintTokens} -> Skip};
+
+// USDC functions
+USDC_transfer(to,value,sender) = atomic{if (value <= USDC_balances[sender]) {
+		transfer.sender.to.value{USDC_balances[sender] = USDC_balances[sender] - value;
+								 USDC_balances[to] = USDC_balances[to] + value;} -> Skip}
+								 else {REVERT -> Reverting()}};
+									  
+USDC_transferFrom(from,to,value,sender) = atomic{if (value <= USDC_allowed[from][sender]) {
+		USDC_transfer(to,value,from);
+		tau{USDC_allowed[from][sender] = USDC_allowed[from][sender] - value;} -> Skip}
+		else {REVERT -> Reverting()}};
+
+USDC_approve(spender,value,sender) =
+	atomic{approval.sender.spender.value{USDC_allowed[sender][spender] = value} -> Skip};
+
+// DAI functions
+DAI_transferFrom(from,to,value,sender) = if (value <= DAI_allowed[from][sender]) {
+		DAI_transfer(to,value,from); tau{DAI_allowed[from][sender] = DAI_allowed[from][sender] - value;} -> Skip} else {REVERT -> Reverting()};
+
+DAI_transfer(to,value,sender) = if (value <= DAI_balances[sender]) {
+		transfer.sender.to.value{DAI_balances[sender] = DAI_balances[sender] - value;
+								 DAI_balances[to] = DAI_balances[to] + value;} -> Skip} else {REVERT -> Reverting()};
+
+DAI_approve(spender,value,sender) = approval.sender.spender.value{DAI_allowed[sender][spender] = value} -> Skip;
+
+// The pool token of Curve Compound Pool
+cCrv_mint(_to,_value) = transfer.0._to._value{cCrv_totalSupply = cCrv_totalSupply + _value; cCrv_balances[_to] = cCrv_balances[_to] + _value;
+							cCrv_sum = call(sum,cCrv_balances); } -> Skip;
+
+cCrv_approve(spender,value,sender) = approval.sender.spender.value{cCrv_allowed[sender][spender] = value} -> Skip;
+
+cCrv_transfer(_to, _value, sender) = atomic{if (_value <= cCrv_balances[sender]) {
+		transfer.sender._to._value{cCrv_balances[_to] = cCrv_balances[_to] + _value; cCrv_balances[sender] = cCrv_balances[sender] - _value;
+										cCrv_sum = call(sum,cCrv_balances);} -> Skip} else {REVERT -> Reverting()}};
+										
+cCrv_transferFrom(_from, _to, _value, sender) = atomic{if (_value <= cCrv_allowed[_from][sender]) {
+		cCrv_transfer(_to,_value,_from); tau{cCrv_allowed[_from][sender] = cCrv_allowed[_from][sender] - _value; cCrv_sum = call(sum,cCrv_balances);} -> Skip} else {REVERT -> Reverting()}};
+										
+cCrv_burnFrom(_to, _value) = transfer._to.0._value{cCrv_totalSupply = cCrv_totalSupply - _value; cCrv_balances[_to] = cCrv_balances[_to] - _value;
+								cCrv_sum = call(sum,cCrv_balances);} -> Skip;

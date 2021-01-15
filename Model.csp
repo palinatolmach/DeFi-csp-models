@@ -1,0 +1,184 @@
+﻿//@@Curve Compound Pool Deposit@@
+// Pool tokens: USDC, DAI; cCrv, cUSDC, cDAI
+// Key protocols: Curve, Compound; Maker
+
+#include "C:\Users\User\Desktop\Compound.csp";
+#include "C:\Users\User\Desktop\Curve_cPool.csp";
+
+// Accounts indexes
+#define user 0;
+#define curveDeposit 1;
+#define compCUSDC 2;
+#define curveSwap 3;
+#define compBorrower 4;
+#define exchanger 5;
+#define compUser 6;
+
+// Token indexes
+#define USDC 0;
+#define DAI 1;
+#define cUSDC 0;
+#define cDAI 1;
+
+// Supplementary functions and values
+IncreaseBlockNum() = blockMined{currentBlockNumber = currentBlockNumber + 1;} -> Skip;
+
+// Compound Protocol
+// Minting/removing cTokens; borrowing tokens from Compound
+//var compSupplied = 200;
+var redeemAmt;
+var initAmt;
+var compProfit;
+
+Compound_Depositor(compSupplied) = tau{initAmt = USDC_balances[compUser];} ->
+		tx(USDC_approveF,compUser,[compCUSDC,compSupplied,0,0]);
+		tx(mintF,compUser,[compSupplied,0,0,0]);
+		tau{redeemAmt = cUSDC_accountTokens[compUser];} ->
+		tx(redeemF,compUser,[redeemAmt,0,0,0]);
+		tau{compProfit = USDC_balances[compUser] - initAmt;} -> Skip; 
+
+var borrowedAmount; // = 11000;
+var returnedAmount;
+Compound_Borrower() = tau{borrowedAmount =  USDC_balances[compCUSDC];} -> // the borrowerAmount here causes over-utilization // USDC_balances[compCUSDC];} ->
+		tx(borrowF,compBorrower,[borrowedAmount,0,0,0]);
+		tau{returnedAmount = borrowedAmount * 2;} ->
+		tx(USDC_approveF,compBorrower,[compCUSDC,returnedAmount,0,0]);
+		tx(repayF,compBorrower,[returnedAmount,0,0,0]);
+
+// Trace Refinement Checking:
+// addLiquidity() in Deposit involves transfer of USDC (or DAI), mint event in cUSDC (that is a part of Compound_Pool_Spec), addLiquidity event;
+// removeLiquidity() happens in the opposite order and! can only happen if the user has previously added liquidity (emitting AddLiquidity event);
+
+// Curve Protocol Depositor and Exchanger
+//var suppliedTokens = [10000, 0];
+var suppliedTokens = 10000;
+var minMintTokens = 8000;
+var add; var remove;
+// The process integrating both liquidity provider's behavior and state-changing functions
+Curve_Depositor() = tx(USDC_approveF, user, [curveDeposit, suppliedTokens,0,0]);
+		tx(add_liquidity, user, [suppliedTokens,minMintTokens,0,0]);
+		tau{add = cCrv_balances[user]; remove = add * 5 / 10;} ->
+		tx(cCrv_approveF,user,[curveDeposit,add,0,0]);
+		tx(remove_liquidity,user,[add,0,0,0]); // there is also one more parameter (true) for donate_dust
+
+var minSwap;
+Curve_Exchanger(i) = Curve_Exchanger_USDC(i) <> Curve_Exchanger_DAI(i);
+Curve_Exchanger_USDC(i) = tau{minSwap = 1;} -> (tx(cUSDC_approveF,exchanger,[curveSwap,i,0,0]); tx(exchange, exchanger, [USDC,DAI,i,minSwap]));
+Curve_Exchanger_DAI(i) = tau{minSwap = 1;} -> (tx(cDAI_approveF,exchanger,[curveSwap,i,0,0]); tx(exchange, exchanger,[DAI,USDC,i,minSwap]));
+
+var suppliedUSDC:{100..20000} = 5000;
+// A smaller model used for testing
+System() = Curve_Depositor() ||| Compound_Depositor(5000) |||  Compound_Borrower() ||| IncreaseBlockNum() ||| Curve_Exchanger(90000000);
+
+Reverting() = atomic {
+	tau{swapBalances = pre_swapBalances;
+		exchangeRates = pre_exchangeRates;
+		cCrv_balances = pre_cCrv_balances;
+		cCrv_allowed = cCrv_allowed;
+		cCrv_totalSupply = pre_cCrv_totalSupply;
+		USDC_balances = pre_USDC_balances;
+		USDC_allowed = pre_USDC_allowed;	
+		DAI_balances = pre_DAI_balances;
+		DAI_allowed = pre_DAI_allowed;
+		cUSDC_accountTokens = pre_cUSDC_accountTokens;
+		cUSDC_allowed = pre_cUSDC_allowed;	
+		cDAI_accountTokens = pre_cDAI_accountTokens;
+		cDAI_allowed = pre_cDAI_allowed;
+		cUSDC_totalSupply = pre_cUSDC_totalSupply;
+		cDAI_totalSupply = pre_cDAI_totalSupply;
+		accountBorrows = pre_accountBorrows;
+		totalBorrows = pre_totalBorrows;
+		totalReserves = pre_totalReserves;
+		totalCash = pre_totalCash;
+		borrowRate = pre_borrowRate;
+		borrowIndex = pre_borrowIndex;
+		currentBlockNumber = pre_currentBlockNumber;
+		cCrv_sum = call(sum,cCrv_balances);
+		cUSDC_sum = call(sum,cUSDC_accountTokens);
+		cDAI_sum = call(sum,cDAI_accountTokens);
+		USDC_sum = call(sum,USDC_balances);
+		DAI_sum = call(sum,DAI_balances);
+	} -> STATE_REVERTED -> Skip
+};
+
+tx(function,sender,params) = atomic {
+	tau{pre_swapBalances = swapBalances;
+		pre_exchangeRates = exchangeRates;
+		pre_cCrv_balances = cCrv_balances;
+		pre_cCrv_allowed = cCrv_allowed;
+		pre_cCrv_totalSupply = cCrv_totalSupply;
+		pre_USDC_balances = USDC_balances;
+		pre_USDC_allowed = USDC_allowed;	
+		pre_DAI_balances = DAI_balances;
+		pre_DAI_allowed = DAI_allowed;
+	    pre_cUSDC_accountTokens = cUSDC_accountTokens;
+		pre_cUSDC_allowed = cUSDC_allowed;	
+		pre_cDAI_accountTokens = cDAI_accountTokens;
+		pre_cDAI_allowed = cDAI_allowed;
+		pre_cUSDC_totalSupply = cUSDC_totalSupply;
+		pre_cDAI_totalSupply = cDAI_totalSupply;
+		pre_accountBorrows = accountBorrows;
+		pre_totalBorrows = totalBorrows;
+		pre_totalReserves = totalReserves;
+		pre_totalCash = totalCash;
+		pre_borrowRate = borrowRate;
+		pre_borrowIndex = borrowIndex;
+		pre_currentBlockNumber = currentBlockNumber;
+		} ->
+	case {
+		function == add_liquidity: Curve_addLiquidity(params[0],params[1],sender) // interrupt REVERT -> Reverting()
+		function == remove_liquidity: Curve_remove_liquidity_one_coin(params[0],params[1],sender)
+		function == borrowF: cUSDC_borrow(params[0],sender)
+		function == mintF: cUSDC_mint(params[0],sender)
+		function == repayF: cUSDC_repayBorrow(params[0],sender)
+		function == redeemF: cUSDC_redeem(params[0],sender)
+		function == USDC_approveF: USDC_approve(params[0],params[1],sender)
+		function == cCrv_approveF: cCrv_approve(params[0],params[1],sender)
+		function == cUSDC_approveF: cUSDC_approve(params[0],params[1],sender)
+		function == cDAI_approveF: cDAI_approve(params[0],params[1],sender)
+		function == exchange: Curve_swap_exchange(params[0],params[1],params[2],params[3],sender)
+		default: Skip
+	}
+};
+
+// Properties
+
+#assert System() deadlockfree;
+
+#define positiveUnderlying suppliedTokens > 0;
+#define positiveMintedCrv cCrv_mintAmount > 0;
+#define positiveMintedComp mintTokens > 0; 
+#define cCrv_balanceInv cCrv_sum == cCrv_totalSupply;
+#define DAI_balanceInv DAI_sum == DAI_totalSupply;
+#define USDC_balanceInv USDC_sum == USDC_totalSupply;
+#define cDAI_balanceInv cDAI_sum == cDAI_totalSupply;
+#define cUSDC_balanceInv cUSDC_sum == cUSDC_totalSupply;
+#define smallLoss loss <= suppliedTokens / 10;
+#define incrExchange prevExchangeRate <= newExchangeRate;
+#define nonnegativeProfit compProfit >= 0;
+#define negativeProfit compProfit < 0;
+#define positiveLoss loss > 0;
+#define negativeLoss loss < 0;
+
+#assert System() |=[] (AddLiquidity -> []smallLoss); 
+#assert System() |=[](positiveUnderlying -> <>(positiveMintedComp && positiveMintedCrv));
+#assert System() |=[] (cCrv_balanceInv && DAI_balanceInv && USDC_balanceInv && cDAI_balanceInv && cUSDC_balanceInv);
+#assert System() |=[] cCrv_balanceInv;
+#assert System() |=[] incrExchange;
+#assert System() |=[] (Mint.cUSDC -> []nonnegativeProfit);
+
+#assert System() reaches nonnegativeProfit with min(compProfit);
+#assert System() reaches nonnegativeProfit with max(compProfit);
+#assert System() reaches negativeProfit with min(compProfit);
+
+#assert System() reaches positiveLoss with max(loss);
+#assert System() reaches positiveLoss with min(loss);
+#assert System() reaches negativeLoss with max(loss);
+#assert System() reaches negativeLoss with min(loss);
+
+#assert ERC20_Approve() refines Test_Approve();
+#assert Test_Approve() refines ERC20_Approve();
+
+// An example of an ERC20 token standard conformance checking 
+ERC20_Approve() = approval.0.1.200 -> Skip;
+Test_Approve() = USDC_approve(1,200,0) [] cUSDC_approve(1,200,0) [] DAI_approve(1,200,0) [] cDAI_approve(1,200,0) [] cCrv_approve(1,200,0);
