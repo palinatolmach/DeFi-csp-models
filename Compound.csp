@@ -3,9 +3,8 @@
 #include "C:\Users\User\Desktop\Curve_cPool.csp";
 
 #define baseRatePerBlock 0;
-#define jumpMultiplierPerBlock 2; // 518
-// TODO: Check if the value makes sense
-#define borrowRateMax 7; // 5 seems closer to the real one
+#define jumpMultiplierPerBlock 2;
+#define borrowRateMax 7;
 
 #define principal 0;
 #define interestIndex 1;
@@ -15,7 +14,7 @@ var cUSDC_sum = call(sum,cUSDC_accountTokens);
 var cUSDC_allowed[10][10]:{0..};
 var pre_cUSDC_accountTokens[10];
 var pre_cUSDC_allowed[10][10];
-var cUSDC_totalSupply = 818825590; // 165903973; // 16590397380
+var cUSDC_totalSupply = 818825590;
 var pre_cUSDC_totalSupply;
 
 var cDAI_accountTokens[10]:{0..} = [0(2),0,229120590,0,500000000,10000,0(3)];
@@ -27,25 +26,25 @@ var pre_cDAI_totalSupply;
 var cDAI_totalSupply = 729130590;
 
 // Compound protocol state and variables
-var totalBorrows = 2692126; // 269212636140982
-var pre_totalBorrows = 2692126; // 269212636140982
+var totalBorrows = 2692126;
+var pre_totalBorrows = 2692126;
 var cDAI_totalBorrows = 1270975;
 var pre_cDAI_totalBorrows = 1270975;
-var totalReserves = 2120; // 212076949743
-var pre_totalReserves = 2120; // 212076949743
+var totalReserves = 2120;
+var pre_totalReserves = 2120;
 var cDAI_totalReserves = 902;
-var totalCash; // = USDC_balances[2];
-var pre_totalCash; // = USDC_balances[2];
+var totalCash;
+var pre_totalCash;
 var util;
 var borrowRate = 0;
 var pre_borrowRate = borrowRate;
-var multiplierPerBlock = 50; // real is 23782343987
-var kink = 80; // real is 80 0000000000000000 or 80%
-var currentBlockNumber = 5; // an environmental variable, actually
+var multiplierPerBlock = 50;
+var kink = 80;
+var currentBlockNumber = 5;
 var pre_currentBlockNumber = currentBlockNumber;
 var accrualBlockNumber = 4;
-var reserveFactor = 5; // real is 5*10^16 or 5%
-var borrowIndex = 1135989011; //2 ; 1135989012552746863; The number is actually 1 digit bigger
+var reserveFactor = 5;
+var borrowIndex = 1135989011;
 var pre_borrowIndex;
 var cDAI_borrowRate;
 
@@ -60,7 +59,6 @@ var currentAccountBorrows;
 var accountBorrows[10][2]:{0..};
 var pre_accountBorrows[10][2];
 var interestAccumulated;
-//var simpleInterestFactor;
 var repaidAmount:{0..};
 
 var prevExchangeRate;
@@ -75,115 +73,144 @@ var newExchangeRate;
 #define cDAI_approveF 13;
 #define cDAI_transferF 14;
 
-cUSDC_mint(mintAmount,sender) = atomic {cUSDC_accrueInterest(); cUSDC_mintFresh(sender,mintAmount)};  // in the code, there is another call to mintInternal()
-						 
-cUSDC_mintFresh(minter,mintAmount) = atomic{cUSDC_exchangeRateStored(); // add the blockNumber check here
-									 tau{mintTokens = call(calcMintCUSDC, mintAmount, exchangeRates);
-										  cUSDC_totalSupply = cUSDC_totalSupply + mintTokens;
-										  cUSDC_accountTokens[minter] = cUSDC_accountTokens[minter] + mintTokens;
-										  cUSDC_sum = call(sum,cUSDC_accountTokens);} ->
-										  (if (mintTokens <= 0) {REVERT -> Reverting()}
-										   else {USDC_transferFrom(minter,compCUSDC,mintAmount,compCUSDC);
-										   		  Mint.cUSDC ->
-								     			  mint.minter.mintAmount.mintTokens ->
-								     			  transfer.compCUSDC.minter.mintTokens -> Skip})};
+cUSDC_mint(mintAmount,sender) = atomic {
+	cUSDC_accrueInterest();
+	cUSDC_mintFresh(sender,mintAmount)};
 
-cUSDC_accrueInterest() = atomic{tau{var cash = USDC_balances[compCUSDC];
-							util = call(getUtilRate,cash,totalBorrows,totalReserves);	
-						    res = call(accrueInterest, currentBlockNumber, accrualBlockNumber, totalBorrows, totalReserves, borrowIndex);
-						    accrualBlockNumber = res[0];
-						    borrowIndex = res[1];
-						    totalBorrows = res[2];
-						    totalReserves = res[3];
-						    interestAccumulated = res[4];} ->
-						    accrueInterest ->
-							accrueInterest.interestAccumulated.borrowIndex.totalBorrows
-							-> Skip};
-										 	
-interestRateModel_utilizationRate() = // if (borrows == 0) return 0; 
-									  atomic{tau{totalCash = USDC_balances[compCUSDC];
-									  	util = call(getUtilRate,totalCash,totalBorrows,totalReserves);} -> Skip};
-	
-cUSDC_exchangeRateCurrent() = atomic{cUSDC_accrueInterest(); cUSDC_exchangeRateStored()};
+cUSDC_mintFresh(minter,mintAmount) = atomic {
+	cUSDC_exchangeRateStored();
+	tau{mintTokens = call(calcMintCUSDC, mintAmount, exchangeRates);
+		cUSDC_totalSupply = cUSDC_totalSupply + mintTokens;
+		cUSDC_accountTokens[minter] = cUSDC_accountTokens[minter] + mintTokens;
+		cUSDC_sum = call(sum,cUSDC_accountTokens);} ->
+		(if (mintTokens <= 0) {REVERT -> Reverting()}
+		else {USDC_transferFrom(minter,compCUSDC,mintAmount,compCUSDC);
+				Mint.cUSDC ->
+				mint.minter.mintAmount.mintTokens ->
+				transfer.compCUSDC.minter.mintTokens -> Skip})};
 
-cUSDC_exchangeRateStored() = atomic{tau{var cash = USDC_balances[compCUSDC]; prevExchangeRate = exchangeRates[USDC];
-	exchangeRates = call(exchangeRateStored,cash,totalBorrows,totalReserves,cUSDC_totalSupply); newExchangeRate = exchangeRates[USDC];} -> Skip};
-						  // = 100 * (USDC_balances[compCUSDC] + totalBorrows - totalReserves) / (cUSDC_totalSupply / 100)} -> Skip;
+cUSDC_accrueInterest() = atomic {
+	tau{var cash = USDC_balances[compCUSDC];
+	util = call(getUtilRate,cash,totalBorrows,totalReserves);
+	res = call(accrueInterest, currentBlockNumber, accrualBlockNumber, totalBorrows, totalReserves, borrowIndex);
+	accrualBlockNumber = res[0];
+	borrowIndex = res[1];
+	totalBorrows = res[2];
+	totalReserves = res[3];
+	interestAccumulated = res[4];} ->
+	accrueInterest ->
+	accrueInterest.interestAccumulated.borrowIndex.totalBorrows -> Skip};
+
+interestRateModel_utilizationRate() = atomic {
+	tau{totalCash = USDC_balances[compCUSDC];
+	util = call(getUtilRate, totalCash, totalBorrows, totalReserves);} -> Skip};
+
+cUSDC_exchangeRateCurrent() = atomic {
+	cUSDC_accrueInterest();
+	cUSDC_exchangeRateStored()};
+
+cUSDC_exchangeRateStored() = atomic {
+	tau{var cash = USDC_balances[compCUSDC];
+	prevExchangeRate = exchangeRates[USDC];
+	exchangeRates = call(exchangeRateStored, cash, totalBorrows, totalReserves, cUSDC_totalSupply);
+	newExchangeRate = exchangeRates[USDC];} -> Skip};
 
 cUSDC_approve(spender,value,sender) = approval.sender.spender.value{cUSDC_allowed[sender][spender] = value} -> Skip;
 
-cUSDC_transferFrom(from,to,value,sender) = atomic{if (value <= cUSDC_allowed[from][sender]) {
-		cUSDC_transfer(to,value,from); tau{cUSDC_allowed[from][sender] = cUSDC_allowed[from][sender] - value;} -> Skip} else {REVERT -> Reverting()}};
-cUSDC_transfer(to,value,sender) = atomic{if (value <= cUSDC_accountTokens[sender]) {
-		transfer{cUSDC_accountTokens[sender] = cUSDC_accountTokens[sender] - value; // transfer.sender.to.value
-								 cUSDC_accountTokens[to] = cUSDC_accountTokens[to] + value;} -> Skip} else {REVERT -> Reverting()}};
+cUSDC_transferFrom(from, to, value, sender) = atomic {
+	if (value <= cUSDC_allowed[from][sender]) {
+		cUSDC_transfer(to, value, from);
+		tau{cUSDC_allowed[from][sender] = cUSDC_allowed[from][sender] - value;} -> Skip}
+	else {REVERT -> Reverting()}};
 
-// the borrow rate is actually retrieved from another LegacyJumpRateModelV2 contract
-cUSDC_redeem(redeemTokensIn,sender) = atomic {cUSDC_accrueInterest(); cUSDC_redeemFresh(sender,redeemTokensIn,0)};
-cUSDC_redeemFresh(redeemer, redeemTokensIn, redeemAmountIn) = atomic{Redeem ->
-															  cUSDC_exchangeRateStored(); // TODO: add a check on one of the parameters being equal to zero
-															  tau{redeemTokens = redeemTokensIn;
-															  redeemAmount = call(calcRedeemCUSDC, redeemTokensIn, exchangeRates);} ->
-															  (if (USDC_balances[compCUSDC] <= redeemAmount) {REVERT -> Reverting()}
-															  	else {USDC_transfer(redeemer,redeemAmount,compCUSDC);
-															  	tau{cUSDC_totalSupply = cUSDC_totalSupply - redeemTokens;
-															  	cUSDC_accountTokens[redeemer] = cUSDC_accountTokens[redeemer] - redeemTokens;
-															  	cUSDC_sum = call(sum,cUSDC_accountTokens);} ->
-															  	transfer.redeemer.redeemTokens ->
-															  	redeem.redeemer.redeemAmount -> Skip}
-															  )};
+cUSDC_transfer(to, value, sender) = atomic {
+	if (value <= cUSDC_accountTokens[sender]) {
+		transfer{cUSDC_accountTokens[sender] = cUSDC_accountTokens[sender] - value;
+		cUSDC_accountTokens[to] = cUSDC_accountTokens[to] + value;} -> Skip}
+	else {REVERT -> Reverting()}};
 
-cUSDC_borrow(borrowAmount, sender) = atomic{cUSDC_accrueInterest(); cUSDC_borrowFresh(sender,borrowAmount)};
-cUSDC_borrowFresh(borrower,borrowAmount) = //Comptroller_borrowAllowed();
-										   // assert(accrualBlockNumber == currentBlockNumber);
-										   atomic{tau{accountBorrows[borrower][principal] = 0;} ->
-										   (if ((USDC_balances[compCUSDC] < borrowAmount) || (accrualBlockNumber != currentBlockNumber)) {Reverting()}
-										    else {cUSDC_borrowBalanceStoredInternal(borrower);
-										   		tau{accountBorrowsNew = currentAccountBorrows + borrowAmount;
-										   	   		totalBorrows = totalBorrows + borrowAmount;} ->
-										   		USDC_transfer(borrower,borrowAmount,compCUSDC);
-										   		tau{accountBorrows[borrower][principal] = accountBorrowsNew; // principal
-										   	   		accountBorrows[borrower][interestIndex] = borrowIndex; // interestIndex
-										   		} ->
-										   	Comptroller_borrowVerify();
-										   	borrow.borrower.borrowAmount -> Skip})};
+cUSDC_redeem(redeemTokensIn, sender) = atomic {
+	cUSDC_accrueInterest();
+	cUSDC_redeemFresh(sender, redeemTokensIn, 0)};
 
-cUSDC_repayBorrow(borrowAmount, sender) = atomic{cUSDC_accrueInterest(); cUSDC_repayBorrowFresh(sender,sender,borrowAmount)};
-cUSDC_repayBorrowFresh(payer,borrower,repayAmount) = Comptroller_repayBorrowAllowed(); // repayAmount could be -1
-										   // tau{accountBorrows[borrower][principal]  = 0;} ->
-										   (if (accrualBlockNumber != currentBlockNumber) {Skip});
-										   cUSDC_borrowBalanceStoredInternal(borrower);
-										   tau{repaidAmount = currentAccountBorrows;
-										   	   accountBorrowsNew = currentAccountBorrows - repaidAmount;
-										   	   totalBorrows = totalBorrows - repaidAmount;} ->
-										   USDC_transferFrom(payer,compCUSDC,repaidAmount,compCUSDC);
-										   tau{accountBorrows[borrower][principal] = accountBorrowsNew; // principal
-										   	   accountBorrows[borrower][interestIndex] = borrowIndex; // interestIndex
-										   } ->
-										   Comptroller_repayBorrowVerify();
-										   repayBorrow.borrower.repaidAmount -> Skip;
+cUSDC_redeemFresh(redeemer, redeemTokensIn, redeemAmountIn) = atomic {
+	cUSDC_exchangeRateStored();
+	tau{redeemTokens = redeemTokensIn;
+	redeemAmount = call(calcRedeemCUSDC, redeemTokensIn, exchangeRates);} ->
+	(if (USDC_balances[compCUSDC] <= redeemAmount)
+		{REVERT -> Reverting()}
+	else {USDC_transfer(redeemer,redeemAmount,compCUSDC);
+	tau{cUSDC_totalSupply = cUSDC_totalSupply - redeemTokens;
+	cUSDC_accountTokens[redeemer] = cUSDC_accountTokens[redeemer] - redeemTokens;
+	cUSDC_sum = call(sum,cUSDC_accountTokens);} ->
+	transfer.redeemer.redeemTokens ->
+	redeem.redeemer.redeemAmount -> Skip})};
 
-Comptroller_borrowAllowed() = // getHypotheticalAccountLiquidityInternal(); -- checking for insufficient liquidity
-							 Skip; // Actually, there is no borrow caps in this pool and the COMP-distribution related functionality is ignored for now
-Comptroller_borrowVerify() = Skip; // is currently not used
+cUSDC_borrow(borrowAmount, sender) = atomic {
+	cUSDC_accrueInterest();
+	cUSDC_borrowFresh(sender, borrowAmount)};
+
+cUSDC_borrowFresh(borrower, borrowAmount) = atomic {
+	tau{accountBorrows[borrower][principal] = 0;} ->
+	(if ((USDC_balances[compCUSDC] < borrowAmount) || (accrualBlockNumber != currentBlockNumber))
+		{REVERT -> Reverting()}
+	else {cUSDC_borrowBalanceStoredInternal(borrower);
+		tau{accountBorrowsNew = currentAccountBorrows + borrowAmount;
+			totalBorrows = totalBorrows + borrowAmount;} ->
+		USDC_transfer(borrower, borrowAmount, compCUSDC);
+		tau{accountBorrows[borrower][principal] = accountBorrowsNew;
+			accountBorrows[borrower][interestIndex] = borrowIndex;} ->
+		Comptroller_borrowVerify();
+		borrow.borrower.borrowAmount -> Skip})};
+
+cUSDC_repayBorrow(borrowAmount, sender) = atomic {
+	cUSDC_accrueInterest();
+	cUSDC_repayBorrowFresh(sender, sender, borrowAmount)};
+
+cUSDC_repayBorrowFresh(payer, borrower, repayAmount) =
+	Comptroller_repayBorrowAllowed();
+	// tau{accountBorrows[borrower][principal]  = 0;} ->
+	(if (accrualBlockNumber != currentBlockNumber) {REVERT - > Reverting()});
+	cUSDC_borrowBalanceStoredInternal(borrower);
+	tau{repaidAmount = currentAccountBorrows;
+		accountBorrowsNew = currentAccountBorrows - repaidAmount;
+		totalBorrows = totalBorrows - repaidAmount;} ->
+	USDC_transferFrom(payer, compCUSDC, repaidAmount, compCUSDC);
+	tau{accountBorrows[borrower][principal] = accountBorrowsNew;
+		accountBorrows[borrower][interestIndex] = borrowIndex;} ->
+	Comptroller_repayBorrowVerify();
+	repayBorrow.borrower.repaidAmount -> Skip;
+
+Comptroller_borrowAllowed() = Skip; // There are no borrow caps in this pool
+Comptroller_borrowVerify() = Skip;
 
 Comptroller_repayBorrowAllowed() = Skip;
 Comptroller_repayBorrowVerify() = Skip;
 
-cUSDC_borrowBalanceStoredInternal(account) = (if (accountBorrows[account][interestIndex] == 0) {tau{currentAccountBorrows = 0;} -> Skip}
-				else {tau{var accPrincipal = accountBorrows[account][principal]; var accIndex = accountBorrows[account][interestIndex];
-					currentAccountBorrows = call(borrowBalanceStored, accPrincipal, borrowIndex, accIndex);} -> Skip});										 
+cUSDC_borrowBalanceStoredInternal(account) =
+	(if (accountBorrows[account][interestIndex] == 0)
+		{tau{currentAccountBorrows = 0;} -> Skip}
+	else {tau{var accPrincipal = accountBorrows[account][principal];
+		var accIndex = accountBorrows[account][interestIndex];
+		currentAccountBorrows = call(borrowBalanceStored, accPrincipal, borrowIndex, accIndex);} ->
+		Skip});
 
-cDAI_exchangeRateCurrent() = tau{exchangeRates[1] = call(cDAI_exchangeRateStored);} -> Skip; // TODO
-	// cDAI_accrueInterest();
-	
+cDAI_exchangeRateCurrent() = tau{exchangeRates[1] = call(cDAI_exchangeRateStored);} -> Skip;
+
 cDAI_exchangeRateStored() = tau{exchangeRates[cDAI] = 100 * (DAI_balances[compCUSDC] + cDAI_totalBorrows - cDAI_totalReserves) / (cDAI_totalSupply / 100)} -> Skip;
 
-cDAI_mint(mintAmount,sender) = mint -> Skip; // TODO
-//cDAI_balanceOf() = balance -> Skip;
+cDAI_mint(mintAmount,sender) = mint -> Skip;
+
 cDAI_approve(spender,amount,sender) = approval.sender.spender.amount{cDAI_allowed[sender][spender] = amount} -> Skip;
-cDAI_transferFrom(src,dst,amount,sender) = atomic {if (amount <= cDAI_allowed[src][sender]) {
-		cDAI_transfer(dst,amount,src); tau{cDAI_allowed[src][dst] = cDAI_allowed[src][dst] - amount;} -> Skip} else {REVERT -> Skip}};
-cDAI_transfer(dst,amount,sender) = atomic{if (amount <= cDAI_accountTokens[dst]) {
+
+cDAI_transferFrom(src,dst,amount,sender) = atomic {
+	if (amount <= cDAI_allowed[src][sender]) {
+		cDAI_transfer(dst,amount,src);
+		tau{cDAI_allowed[src][dst] = cDAI_allowed[src][dst] - amount;} -> Skip}
+	else {REVERT -> Reverting()}};
+
+cDAI_transfer(dst,amount,sender) = atomic {
+	if (amount <= cDAI_accountTokens[dst]) {
 		transfer{cDAI_accountTokens[sender] = cDAI_accountTokens[sender] - amount; // transfer.sender.dst.amount
-								 cDAI_accountTokens[dst] = cDAI_accountTokens[dst] + amount;} -> Skip} else {REVERT -> Skip}};
+		cDAI_accountTokens[dst] = cDAI_accountTokens[dst] + amount;} -> Skip}
+	else {REVERT -> Reverting()}};
