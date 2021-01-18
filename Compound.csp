@@ -78,8 +78,10 @@ cUSDC_mint(mintAmount,sender) = atomic {
 	cUSDC_mintFresh(sender,mintAmount)};
 
 cUSDC_mintFresh(minter,mintAmount) = atomic {
-	cUSDC_exchangeRateStored();
-	tau{mintTokens = call(calcMintCUSDC, mintAmount, exchangeRates);
+	(if (accrualBlockNumber != currentBlockNumber) {
+		REVERT -> Reverting()}
+	else {cUSDC_exchangeRateStored();
+		tau{mintTokens = call(calcMintCUSDC, mintAmount, exchangeRates);
 		cUSDC_totalSupply = cUSDC_totalSupply + mintTokens;
 		cUSDC_accountTokens[minter] = cUSDC_accountTokens[minter] + mintTokens;
 		cUSDC_sum = call(sum,cUSDC_accountTokens);} ->
@@ -87,7 +89,7 @@ cUSDC_mintFresh(minter,mintAmount) = atomic {
 		else {USDC_transferFrom(minter,compCUSDC,mintAmount,compCUSDC);
 				Mint.cUSDC ->
 				mint.minter.mintAmount.mintTokens ->
-				transfer.compCUSDC.minter.mintTokens -> Skip})};
+				transfer.compCUSDC.minter.mintTokens -> Skip})})};
 
 cUSDC_accrueInterest() = atomic {
 	tau{var cash = USDC_balances[compCUSDC];
