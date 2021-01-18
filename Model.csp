@@ -39,11 +39,11 @@ Compound_Depositor(compSupplied) = tau{initAmt = USDC_balances[compUser];} ->
 
 var borrowedAmount;
 var returnedAmount;
-Compound_Borrower() = tau{borrowedAmount =  USDC_balances[compCUSDC];} -> // the borrowerAmount causes over-utilization
-	tx(borrowF,compBorrower,[borrowedAmount,0,0,0]);
+Compound_Borrower() = tau{borrowedAmount = USDC_balances[compCUSDC];} -> // the borrowerAmount causes over-utilization
+	tx(borrowF, compBorrower, [borrowedAmount,0,0,0]);
 	tau{returnedAmount = borrowedAmount * 2;} ->
-	tx(USDC_approveF,compBorrower,[compCUSDC,returnedAmount,0,0]);
-	tx(repayF,compBorrower,[returnedAmount,0,0,0]);
+	tx(USDC_approveF, compBorrower, [compCUSDC, returnedAmount, 0, 0]);
+	tx(repayF, compBorrower, [returnedAmount,0,0,0]);
 
 // Curve Protocol Depositor and Exchanger
 //var suppliedTokens = [10000, 0];
@@ -53,20 +53,20 @@ var add; var remove;
 Curve_Depositor() = tx(USDC_approveF, user, [curveDeposit, suppliedTokens,0,0]);
 	tx(add_liquidity, user, [suppliedTokens,minMintTokens,0,0]);
 	tau{add = cCrv_balances[user]; remove = add * 5 / 10;} ->
-	tx(cCrv_approveF,user,[curveDeposit,add,0,0]);
-	tx(remove_liquidity,user,[add,0,0,0]);
+	tx(cCrv_approveF, user, [curveDeposit,add,0,0]);
+	tx(remove_liquidity, user, [add,0,0,0]);
 
 var minSwap;
 Curve_Exchanger(i) = Curve_Exchanger_USDC(i) <> Curve_Exchanger_DAI(i);
 Curve_Exchanger_USDC(i) = tau{minSwap = 1;} ->
-	(tx(cUSDC_approveF,exchanger,[curveSwap,i,0,0]);
+	(tx(cUSDC_approveF, exchanger, [curveSwap,i,0,0]);
 	tx(exchange, exchanger, [USDC,DAI,i,minSwap]));
 
 Curve_Exchanger_DAI(i) = tau{minSwap = 1;} ->
-	(tx(cDAI_approveF,exchanger,[curveSwap,i,0,0]);
+	(tx(cDAI_approveF, exchanger, [curveSwap,i,0,0]);
 	tx(exchange, exchanger,[DAI,USDC,i,minSwap]));
 
-System() = Curve_Depositor() ||| Compound_Depositor(5000) |||  Compound_Borrower() ||| IncreaseBlockNum() ||| Curve_Exchanger(90000000);
+System() = Curve_Depositor() ||| Compound_Depositor(5000) ||| Compound_Borrower() ||| IncreaseBlockNum() ||| Curve_Exchanger(90000000);
 
 Reverting() = atomic {
 	tau{swapBalances = pre_swapBalances;
@@ -109,7 +109,7 @@ tx(function,sender,params) = atomic {
 		pre_USDC_allowed = USDC_allowed;
 		pre_DAI_balances = DAI_balances;
 		pre_DAI_allowed = DAI_allowed;
-	    pre_cUSDC_accountTokens = cUSDC_accountTokens;
+		pre_cUSDC_accountTokens = cUSDC_accountTokens;
 		pre_cUSDC_allowed = cUSDC_allowed;
 		pre_cDAI_accountTokens = cDAI_accountTokens;
 		pre_cDAI_allowed = cDAI_allowed;
@@ -124,17 +124,17 @@ tx(function,sender,params) = atomic {
 		pre_currentBlockNumber = currentBlockNumber;
 		} ->
 	case {
-		function == add_liquidity: Curve_addLiquidity(params[0],params[1],sender) // interrupt REVERT -> Reverting()
-		function == remove_liquidity: Curve_remove_liquidity_one_coin(params[0],params[1],sender)
-		function == borrowF: cUSDC_borrow(params[0],sender)
-		function == mintF: cUSDC_mint(params[0],sender)
-		function == repayF: cUSDC_repayBorrow(params[0],sender)
-		function == redeemF: cUSDC_redeem(params[0],sender)
-		function == USDC_approveF: USDC_approve(params[0],params[1],sender)
-		function == cCrv_approveF: cCrv_approve(params[0],params[1],sender)
-		function == cUSDC_approveF: cUSDC_approve(params[0],params[1],sender)
-		function == cDAI_approveF: cDAI_approve(params[0],params[1],sender)
-		function == exchange: Curve_swap_exchange(params[0],params[1],params[2],params[3],sender)
+		function == add_liquidity: Curve_addLiquidity(params[0], params[1], sender)
+		function == remove_liquidity: Curve_remove_liquidity_one_coin(params[0], params[1], sender)
+		function == borrowF: cUSDC_borrow(params[0], sender)
+		function == mintF: cUSDC_mint(params[0], sender)
+		function == repayF: cUSDC_repayBorrow(params[0], sender)
+		function == redeemF: cUSDC_redeem(params[0], sender)
+		function == USDC_approveF: USDC_approve(params[0], params[1], sender)
+		function == cCrv_approveF: cCrv_approve(params[0], params[1], sender)
+		function == cUSDC_approveF: cUSDC_approve(params[0], params[1], sender)
+		function == cDAI_approveF: cDAI_approve(params[0], params[1], sender)
+		function == exchange: Curve_swap_exchange(params[0], params[1], params[2], params[3], sender)
 		default: Skip
 	}
 };

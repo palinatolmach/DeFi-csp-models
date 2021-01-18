@@ -125,13 +125,43 @@ namespace PAT.Lib
 			return (int)(res % Int32.MaxValue);
 		}
 
-		public static long getD(long[] xp) {
-			long[] long_xp = xp; // xp.Select(z => (long)z).ToArray();
+		public static long getD(double[] rates, long[] balances) {
+			long[] long_xp = new long[2];
+			long_xp[0] = (long)Math.Round(balances[0] * rates[0]);
+			long_xp[1] = (long)Math.Round(balances[1] * rates[1]);
 			long S = long_xp[0] + long_xp[1];
 			long Dprev = 0;
 			long D = (long)(S);
 			long Ann = A * 2;
 			long D_P;
+
+			for (var _i = 0; _i < 256; _i++) {
+				D_P = D;
+				D_P = D_P * D / (long_xp[0] * N_COINS + 1);
+				D_P = D_P * D / (long_xp[1] * N_COINS + 1);
+				Dprev = D;
+				D = (Ann * S + D_P * N_COINS) * D / ((Ann - 1) * D + (N_COINS + 1) * D_P);
+				if (D > Dprev) {
+					if ((D - Dprev) <= 1) {
+						break;
+					}
+				} else {
+					if ((Dprev - D) <= 1) {
+						break;
+					}
+				}
+			}
+			return D;
+		}
+
+		public static long getD(long[] xp) {
+			long[] long_xp = xp;
+			long S = long_xp[0] + long_xp[1];
+			long Dprev = 0;
+			long D = (long)(S);
+			long Ann = A * 2;
+			long D_P;
+
 			for (var _i = 0; _i < 256; _i++) {
 				D_P = D;
 				D_P = D_P * D / (long_xp[0] * N_COINS + 1);
@@ -178,7 +208,6 @@ namespace PAT.Lib
 		}
 
 		public static long getY(int i, long[] long_xp, long D_arg) {
-//			long[] long_xp = xp.Select(z => (long)z).ToArray();
 			long S_ = 0;
 			long D_y = D_arg;
 			long c = D_y;
@@ -216,7 +245,6 @@ namespace PAT.Lib
 		}
 
 		public static long swapGetY(int i, int j, long x, long[] xp) {
-//			long[] long_xp = xp.Select(z => (long)z).ToArray();
 			long S_ = 0;
 			long D = getD(xp);
 			long c = D;
@@ -257,53 +285,45 @@ namespace PAT.Lib
 			return y;
 		}
 
-		public static int[] removeLiquidityImbalance(int[] bals, int _amounts, int[] rates, int total_supply) {
-			long[] long_balances = bals.Select(z => (long)z).ToArray();
-			double[] long_rates = rates.Select(z => z / 100000.0d).ToArray();
+		public static int[] removeLiquidityImbalance(int[] int_balances, int _amounts, int[] int_rates, int total_supply) {
+			long[] balances = int_balances.Select(z => (long)z).ToArray();
+			double[] rates = int_rates.Select(z => z / 100000.0d).ToArray();
 			long amounts = (long)(_amounts);
 			long token_supply = (long)(total_supply);
-			long[] old_balances = long_balances;
-			long[] newBals = oldBals;
+			long[] old_balances = balances;
+			long[] new_balances = old_balances;
 			long[] long_xp = new long[2];
 			double fee = _fee * N_COINS / (4 * (N_COINS - 1));
 			double[] fees = new double[2];
 
-			long_xp[0] = (long)Math.Round(oldBals[0] * long_rates[0]);
-			long_xp[1] = (long)Math.Round(oldBals[1] * long_rates[1]);
+			long D_0 = getD(rates, balances);
 
-			long D_0 = getD(long_xp);
+			new_balances[0] -= amounts;
 
-			newBals[0] -= amounts;
-
-			long_xp[0] = (long)Math.Round(newBals[0] * long_rates[0]);
-			long_xp[1] = (long)Math.Round(newBals[1] * long_rates[1]);
-			long D_1 = getD(long_xp);
+			long D_1 = getD(rates, new_balances);
 
 			for (var _i = 0; _i < 2; _i++) {
-				long ideal_balance = D_1 * oldBals[_i] / D_0;
+				long ideal_balance = D_1 * old_balances[_i] / D_0;
 				long difference = 0;
-				if (ideal_balance > newBals[_i]) {
-					difference = ideal_balance - newBals[_i];
+				if (ideal_balance > new_balances[_i]) {
+					difference = ideal_balance - new_balances[_i];
 				} else {
-					difference = newBals[_i] - ideal_balance;
+					difference = new_balances[_i] - ideal_balance;
 				}
 				fees[_i] = fee * difference;
-				long_balances[_i] = (long)(System.Math.Round(newBals[_i] - (fees[_i] * 0.5)));
-				newBals[_i] = (long)(System.Math.Round(newBals[_i] - fees[_i]));
+				balances[_i] = (long)(System.Math.Round(new_balances[_i] - (fees[_i] * 0.5)));
+				new_balances[_i] = (long)(System.Math.Round(new_balances[_i] - fees[_i]));
 			}
 
-			long_xp[0] = (long)Math.Round(newBals[0] * long_rates[0]);
-			long_xp[1] = (long)Math.Round(newBals[1] * long_rates[1]);
-
-			long D_2 = getD(long_xp);
+			long D_2 = getD(rates, new_balances);
 
 			long token_amount = (D_0 - D_2) * token_supply / D_0;
 			int int_amount = (int)(token_amount % Int32.MaxValue);
 //			int[] int_balances = long_balances.Select(z => (int)z % Int32.MaxValue).ToArray();
 
 			int a,b;
-			a = (int) (long_balances[0]);
-			b = (int) (long_balances[1]);
+			a = (int) (balances[0]);
+			b = (int) (balances[1]);
 
 			int[] res = new int[3];
 			res = new int[] {int_amount,a,b};
@@ -311,46 +331,39 @@ namespace PAT.Lib
 			return res;
 		}
 
-		public static int[] curveMintAmount(int[] balances, int amounts, int[] rates, int total_supply) {
+		public static int[] curveMintAmount(int[] int_balances, int amounts, int[] int_rates, int total_supply) {
 			long amount = (long)(amounts);
 			long token_supply = (long)(total_supply);
-			long[] long_balances = balances.Select(z => (long)z).ToArray();
-			double[] long_rates = rates.Select(z => z / 100000.0d).ToArray();
+			long[] balances = int_balances.Select(z => (long)z).ToArray();
+			double[] rates = int_rates.Select(z => z / 100000.0d).ToArray();
 			double fee = _fee * N_COINS / (4 * (N_COINS - 1));
 			double[] fees = new double[2];
 			long[] long_xp = new long[2];
 
-			long[] oldBals = long_balances;
-			long_xp[0] = (long)Math.Round(oldBals[0] * long_rates[0]);
-			long_xp[1] = (long)Math.Round(oldBals[1] * long_rates[1]);
-			long D_0 = getD(long_xp);
+			long[] old_balances = balances;
+			long D_0 = getD(rates, old_balances);
 
-			long[] newBals = oldBals;
-			newBals[0] += amount;
-			long_xp[0] = (long)Math.Round(newBals[0] * long_rates[0]);
-			long_xp[1] = (long)Math.Round(newBals[1] * long_rates[1]);
-			long D_1 = getD(long_xp);
+			long[] new_balances = old_balances;
+			new_balances[0] += amount;
+			long D_1 = getD(rates, new_balances);
 
 			long D_2 = D_1;
 
 			for (var _i = 0; _i < 2; _i++) {
-				long ideal_balance = D_1 * oldBals[_i] / D_0;
+				long ideal_balance = D_1 * old_balances[_i] / D_0;
 				long difference = 0;
-				if (ideal_balance > newBals[_i]) {
-					difference = ideal_balance - newBals[_i];
+				if (ideal_balance > new_balances[_i]) {
+					difference = ideal_balance - new_balances[_i];
 				} else {
-					difference = newBals[_i] - ideal_balance;
+					difference = new_balances[_i] - ideal_balance;
 				}
 
 				fees[_i] = fee * difference;
-				long_balances[_i] = (long)(System.Math.Round(newBals[_i] - (fees[_i] * 0.5)));
-				newBals[_i] = (long)(System.Math.Round(newBals[_i] - fees[_i]));
+				balances[_i] = (long)(System.Math.Round(new_balances[_i] - (fees[_i] * 0.5)));
+				new_balances[_i] = (long)(System.Math.Round(new_balances[_i] - fees[_i]));
 			}
 
-			long_xp[0] = (long)Math.Round(newBals[0] * long_rates[0]);
-			long_xp[1] = (long)Math.Round(newBals[1] * long_rates[1]);
-
-			D_2 = getD(long_xp);
+			D_2 = getD(rates, new_balances);
 
 			long mint_amount = token_supply * (D_2 - D_0) / D_0;
 
@@ -358,8 +371,8 @@ namespace PAT.Lib
 			int a,b;
 
 //			int[] int_balances = long_balances.Select(z => (int)z % Int32.MaxValue).ToArray();
-			a = (int) (long_balances[0]);
-			b = (int) (long_balances[1]);
+			a = (int) (balances[0]);
+			b = (int) (balances[1]);
 
 			int[] res = new int[3];
 			res = new int[] {int_mint,a,b};
