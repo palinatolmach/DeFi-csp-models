@@ -93,7 +93,7 @@ Curve_remove_liquidity_one_coin(_token_amount,min_uamount,sender) =
 	atomic{Curve_current_rates();
 	Curve_calc_withdraw_one_coin(_token_amount);
 	(if (dy < min_uamount) {REVERT -> Reverting()});
-	cCrv_transferFrom(sender, curveDeposit, _token_amount, rveDeposit);
+	cCrv_transferFrom(sender, curveDeposit, _token_amount, curveDeposit);
 	tau{amounts[0] = 0; amounts[1] = 0; amounts[0] = call(calcRemoveAmount, dy, exchangeRates);
 	token_amount_before = cCrv_balances[curveDeposit];} ->
 	Curve_swap_remove_liquidity_imbalance(amounts, _token_amount, curveDeposit);
@@ -103,7 +103,7 @@ Curve_swap_remove_liquidity_imbalance(_amounts, max_burn_amount, sender) = atomi
 	tau{res = call(removeLiquidityImbalance, swapBalances, _amounts[0], exchangeRates, cCrv_totalSupply);
 		token_amount = res[0]; swapBalances[0] = res[1]; swapBalances[1] = res[2]; } ->
 	(if ((token_amount <= 0) || (token_amount > max_burn_amount)) {REVERT -> Reverting()}
-		else {cUSDC_transfer(sender, _amounts[0]curveSwap);
+		else {cUSDC_transfer(sender, _amounts[0], curveSwap);
 			cCrv_burnFrom(sender, token_amount);
 			removeLiquidityImbalance.sender._amounts[0] -> Skip})};
 
